@@ -100,103 +100,77 @@ class TablaPosicionesService:
     """
     Arma la tabla de posiciones de una liga con los partidos ya jugados.
 
-    Todo el conteo se resuelve en la base con agregaciones del ORM, no
-    trayendo los partidos a Python.
+    El conteo se agrupa en la base de datos, en dos pasadas sobre la tabla
+    de partidos: una mirando a los equipos como local y otra como visitante.
+
+    Se hacen DOS consultas a proposito. Anotar las dos relaciones sobre
+    EquipoModel en una sola consulta obliga a Django a unir la tabla de
+    partidos dos veces, y esa union multiplica las filas: un equipo con 2
+    partidos de local y 3 de visitante produce 6 filas, y los Sum terminan
+    contando goles de mas. Agrupando sobre PartidoModel cada partido aporta
+    exactamente una fila.
     """
 
     PUNTOS_VICTORIA = 3
     PUNTOS_EMPATE = 1
 
     @staticmethod
-    def calcular(liga_id):
-        def contar(condicion):
-            return Count("id", filter=condicion, distinct=True)
+    def _estadisticas_por_lado(liga_id, es_local):
+        """
+        Agrupa los partidos jugados por equipo, desde un solo lado del campo.
 
-        equipos = (
-            EquipoModel.objects.filter(liga_id=liga_id)
+        `es_local` decide que columna agrupa y cuales goles son a favor.
+        """
+        if es_local:
+            campo_equipo = "equipo_local"
+            goles_favor, goles_contra = "goles_local", "goles_visitante"
+        else:
+            campo_equipo = "equipo_visitante"
+            goles_favor, goles_contra = "goles_visitante", "goles_local"
+
+        filas = (
+            PartidoModel.objects.filter(liga_id=liga_id, estado="jugado")
+            .values(campo_equipo)
             .annotate(
-                # --- Como local ---
-                pj_local=contar(Q(partidos_de_local__estado="jugado")),
-                ganados_local=contar(
-                    Q(partidos_de_local__estado="jugado")
-                    & Q(
-                        partidos_de_local__goles_local__gt=F(
-                            "partidos_de_local__goles_visitante"
-                        )
-                    )
-                ),
-                empatados_local=contar(
-                    Q(partidos_de_local__estado="jugado")
-                    & Q(
-                        partidos_de_local__goles_local=F(
-                            "partidos_de_local__goles_visitante"
-                        )
-                    )
-                ),
-                gf_local=Sum(
-                    "partidos_de_local__goles_local",
-                    filter=Q(partidos_de_local__estado="jugado"),
-                ),
-                gc_local=Sum(
-                    "partidos_de_local__goles_visitante",
-                    filter=Q(partidos_de_local__estado="jugado"),
-                ),
-                # --- Como visitante ---
-                pj_visita=contar(Q(partidos_de_visitante__estado="jugado")),
-                ganados_visita=contar(
-                    Q(partidos_de_visitante__estado="jugado")
-                    & Q(
-                        partidos_de_visitante__goles_visitante__gt=F(
-                            "partidos_de_visitante__goles_local"
-                        )
-                    )
-                ),
-                empatados_visita=contar(
-                    Q(partidos_de_visitante__estado="jugado")
-                    & Q(
-                        partidos_de_visitante__goles_visitante=F(
-                            "partidos_de_visitante__goles_local"
-                        )
-                    )
-                ),
-                gf_visita=Sum(
-                    "partidos_de_visitante__goles_visitante",
-                    filter=Q(partidos_de_visitante__estado="jugado"),
-                ),
-                gc_visita=Sum(
-                    "partidos_de_visitante__goles_local",
-                    filter=Q(partidos_de_visitante__estado="jugado"),
-                ),
-            )
-            .values(
-                "id",
-                "nombre",
-                "escudo_url",
-                "pj_local",
-                "ganados_local",
-                "empatados_local",
-                "gf_local",
-                "gc_local",
-                "pj_visita",
-                "ganados_visita",
-                "empatados_visita",
-                "gf_visita",
-                "gc_visita",
+                jugados=Count("id"),
+                ganados=Count("id", filter=Q(**{f"{goles_favor}__gt": F(goles_contra)})),
+                empatados=Count("id", filter=Q(**{goles_favor: F(goles_contra)})),
+                goles_favor=Sum(goles_favor),
+                goles_contra=Sum(goles_contra),
             )
         )
+        return {fila[campo_equipo]: fila for fila in filas}
+
+    @staticmethod
+    def calcular(liga_id):
+        como_local = TablaPosicionesService._estadisticas_por_lado(liga_id, True)
+        como_visitante = TablaPosicionesService._estadisticas_por_lado(liga_id, False)
+
+        vacio = {
+            "jugados": 0,
+            "ganados": 0,
+            "empatados": 0,
+            "goles_favor": 0,
+            "goles_contra": 0,
+        }
 
         tabla = []
-        for equipo in equipos:
-            cero = lambda valor: valor or 0  # noqa: E731
+        equipos = EquipoModel.objects.filter(liga_id=liga_id).values(
+            "id", "nombre", "escudo_url"
+        )
 
-            jugados = cero(equipo["pj_local"]) + cero(equipo["pj_visita"])
-            ganados = cero(equipo["ganados_local"]) + cero(equipo["ganados_visita"])
-            empatados = cero(equipo["empatados_local"]) + cero(
-                equipo["empatados_visita"]
-            )
-            perdidos = jugados - ganados - empatados
-            goles_favor = cero(equipo["gf_local"]) + cero(equipo["gf_visita"])
-            goles_contra = cero(equipo["gc_local"]) + cero(equipo["gc_visita"])
+        for equipo in equipos:
+            local = como_local.get(equipo["id"], vacio)
+            visita = como_visitante.get(equipo["id"], vacio)
+
+            def total(clave):
+                return (local[clave] or 0) + (visita[clave] or 0)
+
+            jugados = total("jugados")
+            ganados = total("ganados")
+            empatados = total("empatados")
+            goles_favor = total("goles_favor")
+            goles_contra = total("goles_contra")
 
             tabla.append(
                 {
@@ -210,7 +184,7 @@ class TablaPosicionesService:
                     "jugados": jugados,
                     "ganados": ganados,
                     "empatados": empatados,
-                    "perdidos": perdidos,
+                    "perdidos": jugados - ganados - empatados,
                     "goles_favor": goles_favor,
                     "goles_contra": goles_contra,
                     "diferencia_goles": goles_favor - goles_contra,

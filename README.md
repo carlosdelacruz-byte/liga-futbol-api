@@ -296,6 +296,13 @@ tiempo, ninguna pisa el código de la otra.
 El conteo se resuelve **en la base de datos** con agregaciones del ORM
 (`Count` y `Sum` con `filter=Q(...)`), no trayendo los partidos a Python.
 
+Se hacen **dos consultas a propósito**: una agrupa los partidos por equipo local
+y otra por visitante. Anotar las dos relaciones sobre `EquipoModel` en una sola
+consulta obliga a Django a unir la tabla de partidos dos veces, y esa unión
+multiplica las filas — un equipo con 2 partidos de local y 3 de visitante
+produce 6 filas y los `Sum` cuentan goles de más. Agrupando sobre `PartidoModel`
+cada partido aporta exactamente una fila.
+
 Se suman 3 puntos por victoria y 1 por empate, contando lo hecho de local y de
 visitante. Los desempates van por diferencia de gol y luego por goles a favor.
 
@@ -319,9 +326,13 @@ visitante. Los desempates van por diferencia de gol y luego por goles a favor.
 python manage.py test
 ```
 
-38 pruebas que cubren el registro y el login, los permisos por rol, todas las
+40 pruebas que cubren el registro y el login, los permisos por rol, todas las
 validaciones de los serializers, la disponibilidad de estadios, la máquina de
 estados y el cálculo de la tabla de posiciones.
+
+Dos de ellas vigilan específicamente el problema de la unión múltiple descrito
+arriba: verifican que un equipo con partidos de local **y** de visitante sume
+exactamente sus puntos y sus goles, sin duplicados.
 
 ---
 

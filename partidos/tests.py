@@ -456,6 +456,83 @@ class DisponibilidadTests(BaseAPITestCase):
 
 
 class TablaPosicionesTests(BaseAPITestCase):
+    def _jugado(self, local, visitante, goles_local, goles_visitante, dias_atras):
+        return PartidoModel.objects.create(
+            liga=self.liga,
+            equipo_local=local,
+            equipo_visitante=visitante,
+            estadio=self.estadio_a,
+            fecha=datetime.date.today() - datetime.timedelta(days=dias_atras),
+            hora=datetime.time(16, 0),
+            estado="jugado",
+            goles_local=goles_local,
+            goles_visitante=goles_visitante,
+        )
+
+    def test_equipo_con_varios_partidos_de_local_y_visitante(self):
+        """
+        El caso que rompe las agregaciones mal escritas.
+
+        Si la tabla se calcula uniendo las dos relaciones (local y visitante)
+        en una sola consulta, la union multiplica las filas y los goles se
+        cuentan de mas. Con 2 partidos de local y 1 de visitante tiene que
+        dar exactamente 3 jugados y 6 goles a favor, ni uno mas.
+        """
+        self._jugado(self.equipo_a, self.equipo_b, 2, 0, 10)
+        self._jugado(self.equipo_a, self.equipo_c, 3, 1, 9)
+        self._jugado(self.equipo_b, self.equipo_a, 0, 1, 8)
+
+        self.autenticar(self.admin)
+        respuesta = self.client.get(reverse("partidos-tabla", args=[self.liga.id]))
+        tabla = {fila["equipo"]: fila for fila in respuesta.data}
+
+        equipo_a = tabla["Equipo A"]
+        self.assertEqual(equipo_a["jugados"], 3)
+        self.assertEqual(equipo_a["ganados"], 3)
+        self.assertEqual(equipo_a["perdidos"], 0)
+        self.assertEqual(equipo_a["puntos"], 9)
+        self.assertEqual(equipo_a["goles_favor"], 6)
+        self.assertEqual(equipo_a["goles_contra"], 1)
+        self.assertEqual(equipo_a["diferencia_goles"], 5)
+
+        equipo_b = tabla["Equipo B"]
+        self.assertEqual(equipo_b["jugados"], 2)
+        self.assertEqual(equipo_b["perdidos"], 2)
+        self.assertEqual(equipo_b["puntos"], 0)
+        self.assertEqual(equipo_b["goles_favor"], 0)
+        self.assertEqual(equipo_b["goles_contra"], 3)
+
+    def test_los_partidos_no_jugados_no_suman(self):
+        self._jugado(self.equipo_a, self.equipo_b, 1, 0, 5)
+        # Programado y cancelado: ninguno de los dos entra en la tabla.
+        PartidoModel.objects.create(
+            liga=self.liga,
+            equipo_local=self.equipo_a,
+            equipo_visitante=self.equipo_c,
+            estadio=self.estadio_a,
+            fecha=self.manana,
+            hora=datetime.time(16, 0),
+            estado="programado",
+        )
+        PartidoModel.objects.create(
+            liga=self.liga,
+            equipo_local=self.equipo_c,
+            equipo_visitante=self.equipo_a,
+            estadio=self.estadio_b,
+            fecha=self.manana,
+            hora=datetime.time(20, 0),
+            estado="cancelado",
+        )
+
+        self.autenticar(self.admin)
+        respuesta = self.client.get(reverse("partidos-tabla", args=[self.liga.id]))
+        tabla = {fila["equipo"]: fila for fila in respuesta.data}
+
+        self.assertEqual(tabla["Equipo A"]["jugados"], 1)
+        self.assertEqual(tabla["Equipo A"]["puntos"], 3)
+        self.assertEqual(tabla["Equipo C"]["jugados"], 0)
+        self.assertEqual(tabla["Equipo C"]["puntos"], 0)
+
     def test_tabla_suma_puntos_y_ordena(self):
         hoy = datetime.date.today()
         # A le gana a B (3 puntos para A), C empata con B.
