@@ -3,7 +3,7 @@
 API REST para la gestión de una liga de fútbol: ligas, equipos, estadios, jugadores,
 usuarios con JWT y programación de partidos con control real de disponibilidad.
 
-**Documentación interactiva:** `/docs/` · **Esquema OpenAPI:** `/schema/` · **ReDoc:** `/redoc/`
+**Documentación interactiva:** `/docs/` · **Esquema OpenAPI:** `/schema/`
 
 ---
 
@@ -16,6 +16,7 @@ usuarios con JWT y programación de partidos con control real de disponibilidad.
 | Base de datos | PostgreSQL |
 | Autenticación | JWT (`djangorestframework-simplejwt`) |
 | Documentación | Swagger / OpenAPI 3 (`drf-spectacular`) |
+| Panel admin | Django Admin + Jazzmin |
 | Despliegue | Render (Gunicorn + WhiteNoise) |
 
 ---
@@ -23,7 +24,7 @@ usuarios con JWT y programación de partidos con control real de disponibilidad.
 ## Arquitectura
 
 El proyecto está partido en **cuatro aplicaciones**, una por dominio. Cada una es
-dueña de sus modelos y las relaciones que cruzan de app se declaran por string
+dueña de sus modelos, y las relaciones que cruzan de app se declaran por string
 (`"ligas.EquipoModel"`), que es como Django resuelve dependencias entre módulos.
 
 ```
@@ -57,7 +58,7 @@ LigaModel ──< EquipoModel ──< EstadioModel
 ### 1. Requisitos
 
 - Python 3.12
-- PostgreSQL 14 o superior (local, o una base en la nube)
+- PostgreSQL 14 o superior
 
 ### 2. Clonar e instalar
 
@@ -73,10 +74,6 @@ Activar el entorno virtual:
 venv\Scripts\activate
 ```
 
-```bash
-source venv/bin/activate
-```
-
 Instalar las dependencias:
 
 ```bash
@@ -89,31 +86,28 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Editar `.env` y poner la cadena de conexión de PostgreSQL en `DATABASE_URL`.
-Toda la conexión viaja en una sola variable:
+Editar `.env` con los datos de la base de datos:
 
 ```
-DATABASE_URL=postgresql://usuario:clave@localhost:5432/liga_futbol
+DB_NAME=liga_futbol
+DB_USER=postgres
+DB_PASSWORD=tu_clave
+DB_HOST=localhost
+DB_PORT=5432
+DB_SSLMODE=disable
 ```
 
-### 4. Migrar y sembrar datos
+> `DB_SSLMODE` va en `disable` para un Postgres local y en `require` en Render.
+
+### 4. Migrar y crear el superusuario
 
 ```bash
 python manage.py migrate
 ```
 
 ```bash
-python manage.py sembrar_datos
+python manage.py createsuperuser
 ```
-
-El comando `sembrar_datos` carga una liga con 6 equipos, sus estadios, 66 jugadores,
-6 partidos (3 jugados y 3 programados) y **tres usuarios de prueba, uno por rol**:
-
-| Usuario | Contraseña | Rol |
-|---|---|---|
-| `admin` | `Admin.LigaApp2026` | Administrador |
-| `entrenador` | `Entrenador.2026` | Director técnico |
-| `hincha` | `Hincha.2026` | Hincha |
 
 ### 5. Levantar el servidor
 
@@ -121,7 +115,23 @@ El comando `sembrar_datos` carga una liga con 6 equipos, sus estadios, 66 jugado
 python manage.py runserver
 ```
 
-Abrir `http://127.0.0.1:8000/docs/`.
+- API y Swagger: `http://127.0.0.1:8000/docs/`
+- Panel de administración: `http://127.0.0.1:8000/admin/`
+
+### 6. Cargar los datos de prueba
+
+Desde el panel de administración, en este orden (cada uno depende del anterior):
+
+1. **Liga** — por ejemplo *Liga 1 Perú*, temporada `2025-2026`
+2. **Equipos** — asignados a esa liga
+3. **Estadios** — uno por equipo
+4. **Posiciones** — Arquero (ARQ), Defensa (DEF), Mediocampista (MED), Delantero (DEL)
+5. **Jugadores** — con su equipo y posición
+6. **Partidos** — o desde la propia API, que valida las reglas de negocio
+
+Para probar los tres roles, creá tres usuarios desde el admin y asignales
+`rol` = `admin`, `dt` y `hincha`. El registro público siempre crea hinchas,
+a propósito.
 
 ---
 
@@ -129,7 +139,7 @@ Abrir `http://127.0.0.1:8000/docs/`.
 
 La API usa **JWT**. El flujo es siempre el mismo:
 
-**1. Registrarse** (o usar un usuario sembrado) — `POST /api/v1/auth/registro/`
+**1. Registrarse** — `POST /api/v1/auth/registro/`
 
 ```json
 {
@@ -143,16 +153,15 @@ La API usa **JWT**. El flujo es siempre el mismo:
 **2. Iniciar sesión** — `POST /api/v1/auth/login/`
 
 ```json
-{ "username": "admin", "password": "Admin.LigaApp2026" }
+{ "username": "admin", "password": "tu_clave" }
 ```
 
-La respuesta trae los dos tokens y los datos del usuario:
+Respuesta:
 
 ```json
 {
   "access": "eyJhbGciOiJIUzI1NiIs...",
-  "refresh": "eyJhbGciOiJIUzI1NiIs...",
-  "usuario": { "id": 1, "username": "admin", "rol": "admin" }
+  "refresh": "eyJhbGciOiJIUzI1NiIs..."
 }
 ```
 
@@ -162,7 +171,7 @@ La respuesta trae los dos tokens y los datos del usuario:
 Authorization: Bearer <access>
 ```
 
-El `access` dura 60 minutos; cuando vence se pide uno nuevo con el `refresh`
+El `access` dura 30 minutos; cuando vence se pide uno nuevo con el `refresh`
 (que dura 1 día) en `POST /api/v1/auth/login/refresh/`.
 
 > En Swagger: botón **Authorize** (arriba a la derecha) → pegar `Bearer <access>`.
@@ -176,16 +185,22 @@ El `access` dura 60 minutos; cuando vence se pide uno nuevo con el `refresh`
 | Fichar jugadores | **401** | **403** | **201** | **201** |
 | Programar partidos | **401** | **403** | **403** | **201** |
 | Dejar una reseña | **401** | 201 | 201 | 201 |
-| Moderar reseñas ajenas | **401** | **403** | **403** | 200 |
+| Editar la reseña de otro | **401** | **404** | **404** | 200 |
 
 El **403 del hincha en un POST es la prueba** de que la API distingue roles:
 primero demuestra quién es (JWT), después se evalúa qué puede hacer (permisos).
+
+Los permisos se escriben una sola vez en `usuarios/permissions.py`
+(`EsAdmin`, `EsAdminOrReadOnly`, `EsStaffDeLigaOrReadOnly`) y se reutilizan en
+todas las vistas. Para lo que es "de cada uno" (reseñas, ficha propia) el filtro
+va en `get_queryset()`: si el registro no es tuyo, ni siquiera está en tu
+queryset y la API responde 404.
 
 ---
 
 ## Endpoints
 
-Todo cuelga de `/api/v1/`. Son **24 rutas y 58 operaciones** documentadas.
+Todo cuelga de `/api/v1/`. Son **22 rutas y 56 operaciones** documentadas.
 
 ### Autenticación
 | Método | Ruta | Descripción |
@@ -193,7 +208,6 @@ Todo cuelga de `/api/v1/`. Son **24 rutas y 58 operaciones** documentadas.
 | POST | `/auth/registro/` | Alta pública (nace con rol `hincha`) |
 | POST | `/auth/login/` | Devuelve `access` + `refresh` |
 | POST | `/auth/login/refresh/` | Renueva el `access` |
-| POST | `/auth/login/verify/` | Valida un token |
 
 ### Usuarios
 | Método | Ruta | Descripción |
@@ -201,7 +215,6 @@ Todo cuelga de `/api/v1/`. Son **24 rutas y 58 operaciones** documentadas.
 | GET, POST | `/usuarios/` | Padrón completo (solo admin) |
 | GET, PUT, PATCH, DELETE | `/usuarios/{id}/` | Ficha del usuario (DELETE = baja lógica) |
 | GET, PUT, PATCH | `/usuarios/perfil/` | El usuario que trae el token |
-| POST | `/usuarios/cambiar-password/` | Cambio de contraseña propia |
 
 ### Ligas, equipos y estadios
 | Método | Ruta |
@@ -224,12 +237,6 @@ Todo cuelga de `/api/v1/`. Son **24 rutas y 58 operaciones** documentadas.
 | GET | `/partidos/tabla/{liga_id}/` | Tabla de posiciones calculada |
 | GET, POST | `/resenas/` | Opinión sobre un partido jugado |
 | GET, PUT, PATCH, DELETE | `/resenas/{id}/` | Solo el autor o el admin |
-
-Todos los listados aceptan **filtros, búsqueda, orden y paginación**:
-
-```
-GET /api/v1/jugadores/?equipo=1&posicion=2&search=Guerrero&ordering=dorsal&page=2
-```
 
 ---
 
@@ -261,7 +268,8 @@ programado ──> jugado       (final, ya no se mueve)
 
 **Baja lógica.** `DELETE /partidos/{id}/` no borra la fila: la marca `cancelado`
 y responde 204. El partido queda en el historial pero **libera el estadio y la
-fecha**, porque la disponibilidad solo mira los `programado` y `jugado`.
+fecha**, porque la disponibilidad solo mira los `programado` y `jugado`. Un
+partido ya `jugado` no se puede cancelar.
 
 **Concurrencia.** El código público (`PAR-0001`) se asigna dentro de una
 transacción con `select_for_update`: si dos personas programan partidos al mismo
@@ -271,14 +279,17 @@ tiempo, ninguna pisa el código de la otra.
 
 - Dorsal entre 1 y 99, **único dentro del equipo** (el mismo número sí puede repetirse en otro club).
 - Edad entre 15 y 50 años; la fecha de nacimiento no puede ser futura.
+- Altura entre 140 cm y 220 cm.
 - Tope de 30 jugadores activos por plantel.
+- `DELETE` es baja lógica: el jugador queda inactivo pero no se borra, porque aparece en partidos ya jugados.
 
 ### Ligas y equipos
 
 - La temporada se escribe `AAAA-AAAA` y los años deben ser **consecutivos**.
 - El año de fundación va de 1857 (el primer club del mundo) al año en curso.
 - No se repite el nombre de equipo dentro de una misma liga.
-- Un estadio profesional necesita al menos 500 localidades.
+- No se inscriben equipos en una liga inactiva.
+- Un estadio profesional necesita entre 500 y 200.000 localidades.
 
 ### Reseñas
 
@@ -293,46 +304,23 @@ tiempo, ninguna pisa el código de la otra.
 ## Tabla de posiciones
 
 `GET /api/v1/partidos/tabla/{liga_id}/` arma la tabla con los partidos jugados.
-El conteo se resuelve **en la base de datos** con agregaciones del ORM
-(`Count` y `Sum` con `filter=Q(...)`), no trayendo los partidos a Python.
 
-Se hacen **dos consultas a propósito**: una agrupa los partidos por equipo local
-y otra por visitante. Anotar las dos relaciones sobre `EquipoModel` en una sola
-consulta obliga a Django a unir la tabla de partidos dos veces, y esa unión
-multiplica las filas — un equipo con 2 partidos de local y 3 de visitante
-produce 6 filas y los `Sum` cuentan goles de más. Agrupando sobre `PartidoModel`
-cada partido aporta exactamente una fila.
-
-Se suman 3 puntos por victoria y 1 por empate, contando lo hecho de local y de
-visitante. Los desempates van por diferencia de gol y luego por goles a favor.
+`TablaPosicionesService` arranca con todos los equipos de la liga en cero y
+recorre los partidos en estado `jugado` **una sola vez**: cada partido suma para
+su local y para su visitante en la misma pasada. Se dan 3 puntos por victoria y
+1 por empate, y los desempates van por diferencia de gol y luego por goles a favor.
 
 ```json
 [
   {
     "posicion": 1,
     "equipo": "Alianza Lima",
-    "puntos": 3,
-    "jugados": 1, "ganados": 1, "empatados": 0, "perdidos": 0,
-    "goles_favor": 2, "goles_contra": 1, "diferencia_goles": 1
+    "puntos": 9,
+    "jugados": 3, "ganados": 3, "empatados": 0, "perdidos": 0,
+    "goles_favor": 6, "goles_contra": 1, "diferencia_goles": 5
   }
 ]
 ```
-
----
-
-## Pruebas
-
-```bash
-python manage.py test
-```
-
-40 pruebas que cubren el registro y el login, los permisos por rol, todas las
-validaciones de los serializers, la disponibilidad de estadios, la máquina de
-estados y el cálculo de la tabla de posiciones.
-
-Dos de ellas vigilan específicamente el problema de la unión múltiple descrito
-arriba: verifican que un equipo con partidos de local **y** de visitante sume
-exactamente sus puntos y sus goles, sin duplicados.
 
 ---
 
@@ -344,7 +332,7 @@ la base de datos solos con **New → Blueprint**.
 ### Manual, paso a paso
 
 **1. Crear la base de datos**
-New → PostgreSQL → plan *Free* → Create. Copiar la **Internal Database URL**.
+New → PostgreSQL → plan *Free* → Create. Anotar los datos de conexión.
 
 **2. Crear el servicio web**
 New → Web Service → conectar el repositorio de GitHub.
@@ -359,7 +347,8 @@ New → Web Service → conectar el repositorio de GitHub.
 
 | Clave | Valor |
 |---|---|
-| `DATABASE_URL` | la Internal Database URL del paso 1 |
+| `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT` | los del paso 1 |
+| `DB_SSLMODE` | `require` |
 | `SECRET_KEY` | una clave nueva (ver abajo) |
 | `DEBUG` | `False` |
 | `PYTHON_VERSION` | `3.12.10` |
@@ -376,11 +365,7 @@ python -c "from django.core.management.utils import get_random_secret_key; print
 python manage.py createsuperuser
 ```
 
-O sembrar todo de una:
-
-```bash
-python manage.py sembrar_datos
-```
+Y desde ahí cargar los datos por el panel `/admin/`.
 
 ### Qué hace cada archivo del despliegue
 
@@ -390,6 +375,7 @@ python manage.py sembrar_datos
 | `render.yaml` | Describe el servicio y la base de datos como código |
 | `runtime.txt` | Fija la versión de Python |
 | `requirements.txt` | Dependencias con versión exacta, en UTF-8 |
+| `.gitattributes` | Fuerza saltos de línea LF en `build.sh` |
 
 > **Ojo con `build.sh`:** tiene que estar marcado como ejecutable en Git.
 > Si Render responde `permission denied`, correr una vez:
@@ -399,24 +385,24 @@ python manage.py sembrar_datos
 
 ## Decisiones de diseño
 
-**Por qué `DATABASE_URL` y no cinco variables sueltas.** Es el formato que
-entrega Render y el que usa el resto del ecosistema. Una sola variable para
-copiar y pegar, y el mismo `settings.py` sirve en local y en producción sin
-tocar una línea.
-
-**Por qué los permisos son restrictivos por defecto.** En `REST_FRAMEWORK` está
-`DEFAULT_PERMISSION_CLASSES: IsAuthenticated`: todo pide token salvo que la
-vista diga lo contrario. Olvidarse de proteger una vista deja el endpoint
-cerrado, no abierto.
+**Por qué los permisos van vista por vista.** Cada vista declara su
+`permission_classes`, así se lee de un vistazo quién puede hacer qué sin tener
+que ir a buscar una configuración global.
 
 **Por qué bajas lógicas y no borrados.** Un partido jugado es historia: si se
 borra, la tabla de posiciones deja de cuadrar. Lo mismo con los jugadores, que
 aparecen en partidos ya disputados. Se marcan como cancelados o inactivos, y
 las consultas los filtran.
 
-**Por qué algunos serializers llevan `validators = []`.** DRF genera solo un
-validador para cada `UniqueConstraint`, pero devuelve un mensaje genérico en
-`non_field_errors`. Al apagarlo, nuestro `validate()` toma el control y
-responde señalando el campo exacto (y compara sin distinguir mayúsculas, cosa
-que la restricción de base de datos no hace). La restricción sigue en la base
-como última línea de defensa.
+**Por qué la propiedad se resuelve en `get_queryset()` y no en el permiso.**
+Si el registro no es tuyo, directamente no está en tu queryset: la API responde
+404 en vez de 403, y así ni siquiera confirma que ese id existe.
+
+**Por qué las dos vistas `APIView` llevan `@extend_schema`.** La disponibilidad
+y la tabla de posiciones no salen de un modelo, así que drf-spectacular no puede
+adivinar qué devuelven y las dejaría **fuera de Swagger**. El decorador le dice
+a mano qué documentar.
+
+**Por qué `DURACION_PARTIDO_MINUTOS` vive en `utils/`.** La usan el servicio de
+disponibilidad y, a través de él, el serializer. Es una regla del negocio, no un
+detalle de ninguna de las dos.

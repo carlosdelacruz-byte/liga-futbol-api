@@ -1,6 +1,6 @@
 # Infraestructura como codigo para Render.
-# Con este archivo en la raiz, Render crea el servicio web y la base de datos
-# solo con "New > Blueprint" y apuntando al repositorio.
+# Con este archivo en la raiz, Render crea el servicio web y la base de
+# datos con "New > Blueprint" apuntando al repositorio.
 
 databases:
   - name: liga-futbol-db
@@ -15,17 +15,32 @@ services:
     plan: free
     buildCommand: "./build.sh"
     startCommand: "gunicorn core.wsgi:application"
-    healthCheckPath: /
     envVars:
-      - key: DATABASE_URL
+      - key: DB_NAME
         fromDatabase:
           name: liga-futbol-db
-          property: connectionString
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: liga-futbol-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: liga-futbol-db
+          property: password
+      - key: DB_HOST
+        fromDatabase:
+          name: liga-futbol-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: liga-futbol-db
+          property: port
+      - key: DB_SSLMODE
+        value: require
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
         value: "False"
       - key: PYTHON_VERSION
         value: "3.12.10"
-      - key: WEB_CONCURRENCY
-        value: "2"

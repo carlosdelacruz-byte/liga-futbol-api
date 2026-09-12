@@ -1,117 +1,83 @@
 from django.db import models
 
-# Los estados por los que pasa un partido. La regla vive en el serializer:
-# de "programado" se avanza, pero nunca se vuelve atras.
-ESTADOS_PARTIDO = [
-    ("programado", "Programado"),
-    ("jugado", "Jugado"),
-    ("suspendido", "Suspendido"),
-    ("cancelado", "Cancelado"),
+# Los estados por los que pasa un partido.
+# La regla de que estado puede ir a cual vive en el serializer.
+ESTADOS = [
+   ("programado", "Programado"),
+   ("jugado", "Jugado"),
+   ("suspendido", "Suspendido"),
+   ("cancelado", "Cancelado")
 ]
 
 ESTADOS_RESENA = [
-    ("pendiente", "Pendiente"),
-    ("publicada", "Publicada"),
-    ("oculta", "Oculta"),
+   ("pendiente", "Pendiente"),
+   ("publicada", "Publicada"),
+   ("oculta", "Oculta")
 ]
 
 
 class PartidoModel(models.Model):
-    """
-    Un encuentro del fixture.
+   # Un encuentro del fixture. Junta tres dominios: la liga, los equipos
+   # y el estadio viven en `ligas`, y el partido los pone a jugar.
+   liga = models.ForeignKey('ligas.LigaModel', on_delete=models.PROTECT, related_name="partidos")
+   equipo_local = models.ForeignKey(
+      'ligas.EquipoModel', on_delete=models.PROTECT, related_name="partidos_de_local"
+   )
+   equipo_visitante = models.ForeignKey(
+      'ligas.EquipoModel', on_delete=models.PROTECT, related_name="partidos_de_visitante"
+   )
+   estadio = models.ForeignKey('ligas.EstadioModel', on_delete=models.PROTECT, related_name="partidos")
 
-    Junta tres dominios: la liga y los equipos viven en `ligas`, el estadio
-    tambien, y el partido es lo que los pone a jugar en una fecha y hora.
-    """
+   jornada = models.IntegerField(default=1)
+   fecha = models.DateField(null=False)
+   hora = models.TimeField(null=False)
+   estado = models.CharField(max_length=15, choices=ESTADOS, default="programado")
 
-    liga = models.ForeignKey(
-        "ligas.LigaModel", on_delete=models.PROTECT, related_name="partidos"
-    )
-    equipo_local = models.ForeignKey(
-        "ligas.EquipoModel", on_delete=models.PROTECT, related_name="partidos_de_local"
-    )
-    equipo_visitante = models.ForeignKey(
-        "ligas.EquipoModel",
-        on_delete=models.PROTECT,
-        related_name="partidos_de_visitante",
-    )
-    estadio = models.ForeignKey(
-        "ligas.EstadioModel", on_delete=models.PROTECT, related_name="partidos"
-    )
+   # El resultado solo se carga cuando el partido pasa a "jugado"
+   goles_local = models.IntegerField(null=True, blank=True)
+   goles_visitante = models.IntegerField(null=True, blank=True)
 
-    jornada = models.PositiveSmallIntegerField(default=1)
-    fecha = models.DateField()
-    hora = models.TimeField()
-    estado = models.CharField(
-        max_length=15, choices=ESTADOS_PARTIDO, default="programado"
-    )
+   codigo = models.CharField(max_length=20, blank=True)
+   observaciones = models.TextField(null=True, blank=True)
 
-    # El resultado solo se carga cuando el partido pasa a "jugado".
-    goles_local = models.PositiveSmallIntegerField(null=True, blank=True)
-    goles_visitante = models.PositiveSmallIntegerField(null=True, blank=True)
+   # Quien programo el partido sale del token, no del body
+   programado_por = models.ForeignKey(
+      'usuarios.UsuarioModel',
+      on_delete=models.SET_NULL,
+      null=True,
+      blank=True,
+      related_name="partidos_programados"
+   )
 
-    codigo = models.CharField(max_length=20, blank=True)
-    observaciones = models.TextField(null=True, blank=True)
+   created_at = models.DateTimeField(auto_now_add=True)
+   updated_at = models.DateTimeField(auto_now=True)
 
-    # Quien programo el partido sale del token, no del body.
-    programado_por = models.ForeignKey(
-        "usuarios.UsuarioModel",
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="partidos_programados",
-    )
+   class Meta:
+      db_table = "partidos"
+      verbose_name = "Partido"
+      verbose_name_plural = "Partidos"
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        db_table = "partidos"
-        verbose_name = "Partido"
-        verbose_name_plural = "Partidos"
-        ordering = ["-fecha", "-hora"]
-
-    def __str__(self):
-        return (
-            f"{self.equipo_local.nombre} vs {self.equipo_visitante.nombre} "
-            f"({self.fecha})"
-        )
-
-    @property
-    def marcador(self):
-        if self.estado != "jugado" or self.goles_local is None:
-            return None
-        return f"{self.goles_local} - {self.goles_visitante}"
+   def __str__(self):
+      # Alianza Lima vs Universitario (2026-09-20)
+      return f"{self.equipo_local.nombre} vs {self.equipo_visitante.nombre} ({self.fecha})"
 
 
 class ResenaModel(models.Model):
-    """El comentario de un hincha sobre un partido ya jugado."""
+   # El comentario de un hincha sobre un partido ya jugado
+   partido = models.ForeignKey(PartidoModel, on_delete=models.CASCADE, related_name="resenas")
+   autor = models.ForeignKey('usuarios.UsuarioModel', on_delete=models.CASCADE, related_name="resenas")
+   comentario = models.TextField(null=False)
+   puntuacion = models.PositiveSmallIntegerField(default=5)
+   estado = models.CharField(max_length=15, choices=ESTADOS_RESENA, default="pendiente")
+   created_at = models.DateTimeField(auto_now_add=True)
+   updated_at = models.DateTimeField(auto_now=True)
 
-    partido = models.ForeignKey(
-        PartidoModel, on_delete=models.CASCADE, related_name="resenas"
-    )
-    autor = models.ForeignKey(
-        "usuarios.UsuarioModel", on_delete=models.CASCADE, related_name="resenas"
-    )
-    comentario = models.TextField()
-    puntuacion = models.PositiveSmallIntegerField(default=5)
-    estado = models.CharField(
-        max_length=15, choices=ESTADOS_RESENA, default="pendiente"
-    )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+   class Meta:
+      db_table = "resenas"
+      # Un hincha opina una sola vez por partido
+      unique_together = [["partido", "autor"]]
+      verbose_name = "Resena"
+      verbose_name_plural = "Resenas"
 
-    class Meta:
-        db_table = "resenas"
-        verbose_name = "Resena"
-        verbose_name_plural = "Resenas"
-        ordering = ["-created_at"]
-        # Un hincha opina una sola vez por partido.
-        constraints = [
-            models.UniqueConstraint(
-                fields=["partido", "autor"], name="una_resena_por_usuario_y_partido"
-            )
-        ]
-
-    def __str__(self):
-        return f"{self.autor.username} - {self.puntuacion}/5"
+   def __str__(self):
+      return f"Resena de {self.autor.username} - {self.puntuacion}"
