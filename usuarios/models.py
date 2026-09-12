@@ -5,9 +5,6 @@ from utils.helpers import ROLES
 
 
 class UsuarioModel(AbstractUser):
-   # AbstractUser ya incluye: username, password (hasheada), first_name,
-   # last_name, is_staff y todo el sistema de permisos.
-   # Nosotros le sumamos el rol (la base de la autorizacion) y sus datos.
    email = models.EmailField(unique=True)
    rol = models.CharField(max_length=15, choices=ROLES, default="hincha")
    telefono = models.CharField(max_length=9, null=True, blank=True)

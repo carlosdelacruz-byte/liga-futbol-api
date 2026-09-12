@@ -2,8 +2,6 @@ from django.contrib import admin
 
 from .models import EquipoModel, EstadioModel, LigaModel
 
-# Para registrar un modelo usamos el decorador @admin.register
-
 
 @admin.register(LigaModel)
 class LigaAdmin(admin.ModelAdmin):

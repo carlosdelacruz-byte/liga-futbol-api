@@ -2,7 +2,6 @@ from django.db import models
 
 
 class PosicionModel(models.Model):
-   # Arquero, defensa, mediocampista, delantero
    nombre = models.CharField(max_length=50, unique=True, null=False)
    abreviatura = models.CharField(max_length=3, unique=True, null=False)
    descripcion = models.TextField(null=True, blank=True)
@@ -37,18 +36,14 @@ class JugadorModel(models.Model):
    created_at = models.DateTimeField(auto_now_add=True)
    updated_at = models.DateTimeField(auto_now=True)
 
-   # Referencia a una aplicacion exterior
-   # NOMBRE_APLICACION.NOMBRE_MODELO
    equipo = models.ForeignKey('ligas.EquipoModel', on_delete=models.PROTECT, related_name="jugadores")
    posicion = models.ForeignKey(PosicionModel, on_delete=models.PROTECT, related_name="jugadores")
 
    class Meta:
       db_table = "jugadores"
-      # Dentro de un equipo no se puede repetir el dorsal
       unique_together = [["equipo", "dorsal"]]
       verbose_name = "Jugador"
       verbose_name_plural = "Jugadores"
 
    def __str__(self):
-      # 9 - Paolo Guerrero
       return f"{self.dorsal} - {self.nombres} {self.apellidos}"

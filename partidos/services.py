@@ -1,6 +1,3 @@
-# Los services guardan la logica de negocio que necesita consultar la base.
-# Las vistas piden y responden, aca vive el como se calcula.
-
 from datetime import datetime, timedelta
 
 from django.db import transaction
@@ -12,16 +9,12 @@ from .models import PartidoModel
 
 DURACION_PARTIDO = timedelta(minutes=DURACION_PARTIDO_MINUTOS)
 
-# Solo estos estados ocupan la cancha.
-# Los suspendidos y cancelados liberan la fecha.
 ESTADOS_QUE_OCUPAN = ["programado", "jugado"]
 
 
 class DisponibilidadService:
-
    @staticmethod
    def estadios_libres(fecha, hora, excluir_partido=None):
-      # Responde: que estadios estan libres en tal fecha y hora
       inicio = datetime.combine(fecha, hora)
       fin = inicio + DURACION_PARTIDO
 
@@ -33,7 +26,6 @@ class DisponibilidadService:
       for partido in partidos:
          inicio_p = datetime.combine(partido.fecha, partido.hora)
          fin_p = inicio_p + DURACION_PARTIDO
-         # Dos franjas se pisan si cada una empieza antes de que termine la otra
          if inicio_p < fin and inicio < fin_p:
             ocupados.append(partido.estadio_id)
 
@@ -41,9 +33,6 @@ class DisponibilidadService:
 
    @staticmethod
    def equipos_ocupados(fecha, excluir_partido=None):
-      # Que equipos ya tienen partido ese dia.
-      # Aca no miramos la hora: un plantel no juega dos veces en la misma
-      # jornada, aunque sea a diez horas de diferencia.
       partidos = PartidoModel.objects.filter(fecha=fecha, estado__in=ESTADOS_QUE_OCUPAN)
       if excluir_partido:
          partidos = partidos.exclude(pk=excluir_partido.pk)
@@ -56,9 +45,6 @@ class DisponibilidadService:
 
 
 def asignar_codigo(partido):
-   # Le pone el codigo publico al partido (PAR-0001).
-   # select_for_update bloquea la fila mientras se escribe: si dos personas
-   # programan partidos a la vez, ninguna pisa el codigo de la otra.
    with transaction.atomic():
       PartidoModel.objects.select_for_update().get(pk=partido.pk)
       partido.codigo = f"PAR-{partido.id:04d}"
@@ -72,9 +58,6 @@ class TablaPosicionesService:
 
    @staticmethod
    def calcular(liga_id):
-      # Arma la tabla recorriendo los partidos ya jugados.
-      # Cada partido se mira UNA sola vez y suma para sus dos equipos.
-
       tabla = {}
       for equipo in EquipoModel.objects.filter(liga_id=liga_id):
          tabla[equipo.id] = {
@@ -128,7 +111,6 @@ class TablaPosicionesService:
       for fila in filas:
          fila["diferencia_goles"] = fila["goles_favor"] - fila["goles_contra"]
 
-      # Criterios de desempate: puntos, diferencia de gol y goles a favor
       filas.sort(key=lambda fila: (
          -fila["puntos"],
          -fila["diferencia_goles"],

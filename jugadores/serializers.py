@@ -6,7 +6,6 @@ from .models import JugadorModel, PosicionModel
 
 EDAD_MINIMA = 15
 EDAD_MAXIMA = 50
-# Un plantel profesional no lleva mas de 30 fichas activas
 MAXIMO_JUGADORES_POR_EQUIPO = 30
 
 
@@ -33,7 +32,6 @@ class JugadorSerializer(serializers.ModelSerializer):
       ]
 
    def validate_dorsal(self, value):
-      # En el futbol los dorsales van del 1 al 99
       if value < 1 or value > 99:
          raise serializers.ValidationError("El dorsal debe estar entre 1 y 99.")
       return value
@@ -67,14 +65,11 @@ class JugadorSerializer(serializers.ModelSerializer):
       return value
 
    def validate(self, attrs):
-      # El tope del plantel necesita mirar el equipo entero,
-      # por eso va en validate y no en validate_equipo
       equipo = attrs.get("equipo")
       if self.instance and not equipo:
          equipo = self.instance.equipo
 
       if equipo:
-         # Solo se controla al dar de alta o al mover a otro equipo
          es_nuevo = self.instance is None
          cambia_de_equipo = self.instance and self.instance.equipo_id != equipo.id
 
@@ -89,7 +84,6 @@ class JugadorSerializer(serializers.ModelSerializer):
       return attrs
 
    def to_representation(self, instance):
-      # En la respuesta devolvemos los nombres, no solo los ids
       data = super().to_representation(instance)
       data["equipo_nombre"] = instance.equipo.nombre
       data["posicion_nombre"] = instance.posicion.nombre

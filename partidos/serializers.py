@@ -5,9 +5,6 @@ from rest_framework import serializers
 from .models import PartidoModel, ResenaModel
 from .services import DisponibilidadService
 
-# De que estado se puede pasar a cual.
-# Lo que no esta en la lista, no se permite.
-# Un partido jugado o cancelado ya no se mueve: es historia.
 TRANSICIONES = {
    "programado": ["jugado", "suspendido", "cancelado"],
    "suspendido": ["programado", "cancelado"],
@@ -15,7 +12,6 @@ TRANSICIONES = {
    "cancelado": []
 }
 
-# Cuantos dias hacia adelante se puede programar como maximo
 DIAS_MAXIMOS_A_FUTURO = 365
 
 
@@ -28,16 +24,11 @@ class PartidoSerializer(serializers.ModelSerializer):
          "goles_local", "goles_visitante", "observaciones",
          "programado_por", "created_at"
       ]
-      # El codigo lo genera el backend y el responsable sale del token.
-      # Si fueran escribibles, cualquiera inventaria codigos o programaria
-      # partidos a nombre de otro.
       read_only_fields = ["codigo", "programado_por"]
 
-   # VALIDACIONES DE UN SOLO CAMPO
 
    def validate_fecha(self, value):
       hoy = datetime.date.today()
-      # Al programar un partido nuevo la fecha tiene que estar por delante
       if self.instance is None and value < hoy:
          raise serializers.ValidationError(
             "No se puede programar un partido en una fecha pasada."
@@ -55,7 +46,6 @@ class PartidoSerializer(serializers.ModelSerializer):
       return value
 
    def validate_estado(self, value):
-      # La maquina de estados: de programado se avanza, nunca se retrocede
       if self.instance and value != self.instance.estado:
          permitidas = TRANSICIONES.get(self.instance.estado, [])
          if value not in permitidas:
@@ -69,11 +59,9 @@ class PartidoSerializer(serializers.ModelSerializer):
             )
       return value
 
-   # VALIDACION CRUZADA (necesita mirar varios campos a la vez)
 
    def validate(self, attrs):
       def dato(nombre):
-         # El valor nuevo si vino en el body, si no el que ya tiene el partido
          if nombre in attrs:
             return attrs[nombre]
          return getattr(self.instance, nombre, None)
@@ -90,18 +78,15 @@ class PartidoSerializer(serializers.ModelSerializer):
 
       errores = {}
 
-      # 1. Un equipo no juega contra si mismo
       if local and visitante and local == visitante:
          errores["equipo_visitante"] = "El equipo visitante debe ser distinto del local."
 
-      # 2. Los dos equipos tienen que competir en la liga del partido
       if liga:
          if local and local.liga_id != liga.id:
             errores["equipo_local"] = f"{local.nombre} no participa en {liga.nombre}."
          if visitante and visitante.liga_id != liga.id:
             errores["equipo_visitante"] = f"{visitante.nombre} no participa en {liga.nombre}."
 
-      # 3. El resultado solo existe si el partido se jugo
       hay_goles = goles_local is not None or goles_visitante is not None
       if estado == "jugado":
          if goles_local is None or goles_visitante is None:
@@ -111,13 +96,11 @@ class PartidoSerializer(serializers.ModelSerializer):
       elif hay_goles:
          errores["goles_local"] = f"Un partido '{estado}' no puede tener marcador cargado."
 
-      # Las reglas de agenda solo aplican mientras el partido ocupe la cancha
       if estado not in ["programado", "jugado"]:
          if errores:
             raise serializers.ValidationError(errores)
          return attrs
 
-      # 4. El estadio tiene que estar libre en esa franja
       if estadio and fecha and hora:
          libres = DisponibilidadService.estadios_libres(
             fecha, hora, excluir_partido=self.instance
@@ -127,7 +110,6 @@ class PartidoSerializer(serializers.ModelSerializer):
                f"{estadio.nombre} ya tiene un partido cerca de ese horario el {fecha}."
             )
 
-      # 5. Ningun equipo juega dos partidos el mismo dia
       if fecha:
          ocupados = DisponibilidadService.equipos_ocupados(
             fecha, excluir_partido=self.instance
@@ -142,7 +124,6 @@ class PartidoSerializer(serializers.ModelSerializer):
       return attrs
 
    def to_representation(self, instance):
-      # En la respuesta devolvemos los nombres, no solo los ids
       data = super().to_representation(instance)
       data["liga_nombre"] = instance.liga.nombre
       data["equipo_local_nombre"] = instance.equipo_local.nombre
@@ -162,7 +143,6 @@ class ResenaSerializer(serializers.ModelSerializer):
          "id", "partido", "autor", "comentario",
          "puntuacion", "estado", "created_at"
       ]
-      # El autor sale del token, nunca del body
       read_only_fields = ["autor"]
 
    def validate_puntuacion(self, value):
@@ -178,13 +158,11 @@ class ResenaSerializer(serializers.ModelSerializer):
       return value.strip()
 
    def validate_partido(self, value):
-      # Solo se opina de un partido que ya se jugo
       if value.estado != "jugado":
          raise serializers.ValidationError("Solo se pueden resenar partidos ya jugados.")
       return value
 
    def validate_estado(self, value):
-      # Publicar u ocultar una resena es tarea del administrador
       request = self.context.get("request")
       if request and self.instance and value != self.instance.estado:
          if request.user.rol != "admin":
@@ -194,7 +172,6 @@ class ResenaSerializer(serializers.ModelSerializer):
       return value
 
    def validate(self, attrs):
-      # Un usuario deja una sola resena por partido
       request = self.context.get("request")
       partido = attrs.get("partido")
 

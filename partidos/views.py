@@ -15,21 +15,14 @@ from .serializers import PartidoSerializer, ResenaSerializer
 from .services import DisponibilidadService, TablaPosicionesService, asignar_codigo
 
 
-# PARTIDOS
-
 class PartidoListCreateView(generics.ListCreateAPIView):
    permission_classes = [EsAdminOrReadOnly]
    queryset = PartidoModel.objects.all()
    serializer_class = PartidoSerializer
 
    def perform_create(self, serializer):
-      # perform_create es el enganche del generic:
-      # "cuando CREES el partido, hace ADEMAS esto"
-      # 1. El responsable sale del token, no del body
       partido = serializer.save(programado_por=self.request.user)
-      # 2. Se asigna el codigo PAR-0001 con select_for_update
       asignar_codigo(partido)
-      # 3. Se manda el correo
       EmailHelper.enviar(
          asunto=f"Partido programado {partido.codigo}",
          cuerpo=f"Se programo {partido.equipo_local.nombre} vs "
@@ -46,9 +39,6 @@ class PartidoDetailView(generics.RetrieveUpdateDestroyAPIView):
    serializer_class = PartidoSerializer
 
    def destroy(self, request, *args, **kwargs):
-      # SOFT DELETE: el DELETE no elimina la fila, la marca cancelada.
-      # El partido queda en el historial pero deja de ocupar el estadio,
-      # porque la disponibilidad solo mira programados y jugados.
       partido = self.get_object()
       if partido.estado == "jugado":
          return Response(
@@ -60,11 +50,6 @@ class PartidoDetailView(generics.RetrieveUpdateDestroyAPIView):
       return Response(status=204)
 
 
-# DISPONIBILIDAD
-
-# Las vistas APIView no salen de un modelo, asi que drf_spectacular no
-# adivina que devuelven y las dejaria fuera de Swagger. Con @extend_schema
-# le decimos a mano que documentar.
 @extend_schema(
    summary="Estadios libres en una fecha y hora",
    description="Devuelve los estadios sin partido en esa franja y los "
@@ -113,8 +98,6 @@ class DisponibilidadView(APIView):
       })
 
 
-# TABLA DE POSICIONES
-
 @extend_schema(
    summary="Tabla de posiciones de una liga",
    description="Calcula puntos, partidos jugados y goles a partir de los "
@@ -132,21 +115,17 @@ class TablaPosicionesView(APIView):
       return Response(tabla)
 
 
-# RESENAS
-
 class ResenaListCreateView(generics.ListCreateAPIView):
    permission_classes = [IsAuthenticated]
    serializer_class = ResenaSerializer
 
    def get_queryset(self):
-      # El admin ve todas. El resto ve las publicadas y las propias.
       if self.request.user.rol == "admin":
          return ResenaModel.objects.all()
       return ResenaModel.objects.filter(estado="publicada") | \
              ResenaModel.objects.filter(autor=self.request.user)
 
    def perform_create(self, serializer):
-      # El autor sale del token
       serializer.save(autor=self.request.user)
 
 
@@ -155,8 +134,6 @@ class ResenaDetailView(generics.RetrieveUpdateDestroyAPIView):
    serializer_class = ResenaSerializer
 
    def get_queryset(self):
-      # Si no sos admin, el queryset solo tiene tus resenas:
-      # cualquier otra responde 404 y no podes editarla
       if self.request.user.rol == "admin":
          return ResenaModel.objects.all()
       return ResenaModel.objects.filter(autor=self.request.user)

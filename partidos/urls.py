@@ -10,8 +10,6 @@ from .views import (
 )
 
 urlpatterns = [
-    # Las rutas fijas van ANTES de las que capturan un <int:pk>,
-    # si no "disponibilidad" se interpretaria como el id de un partido.
     path(
         "partidos/disponibilidad/",
         DisponibilidadView.as_view(),

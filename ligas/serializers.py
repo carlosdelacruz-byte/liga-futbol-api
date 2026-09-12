@@ -1,6 +1,3 @@
-# SERIALIZERS
-# Los serializers son traductores que convierten los datos en JSON,
-# y tambien se encargan de validar la informacion.
 import datetime
 
 from rest_framework import serializers
@@ -23,7 +20,6 @@ class LigaSerializer(serializers.ModelSerializer):
       return value.strip()
 
    def validate_temporada(self, value):
-      # La temporada se escribe 2025-2026 y los anios tienen que ser consecutivos
       partes = value.strip().split("-")
       if len(partes) != 2:
          raise serializers.ValidationError(
@@ -67,7 +63,6 @@ class EquipoSerializer(serializers.ModelSerializer):
       return value.strip()
 
    def validate_fundacion(self, value):
-      # El primer club de futbol del mundo es de 1857
       if value < 1857:
          raise serializers.ValidationError(
             "El anio de fundacion no puede ser anterior a 1857."
@@ -86,7 +81,6 @@ class EquipoSerializer(serializers.ModelSerializer):
       return value
 
    def to_representation(self, instance):
-      # En la respuesta devolvemos el objeto completo de la liga
       data = super().to_representation(instance)
       data["liga"] = LigaSerializer(instance.liga).data
       return data
