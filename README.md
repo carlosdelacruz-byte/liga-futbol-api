@@ -118,18 +118,21 @@ python manage.py runserver
 - API y Swagger: `http://127.0.0.1:8000/docs/`
 - Panel de administración: `http://127.0.0.1:8000/admin/`
 
-### 6. Cargar los datos de prueba
+### 6. Los datos de prueba
 
-Desde el panel de administración, en este orden (cada uno depende del anterior):
+**Ya vienen cargados.** Una migración de datos
+(`partidos/migrations/0003_sembrar_liga.py`) siembra al migrar:
 
-1. **Liga** — por ejemplo *Liga 1 Perú*, temporada `2025-2026`
-2. **Equipos** — asignados a esa liga
-3. **Estadios** — uno por equipo
-4. **Posiciones** — Arquero (ARQ), Defensa (DEF), Mediocampista (MED), Delantero (DEL)
-5. **Jugadores** — con su equipo y posición
-6. **Partidos** — o desde la propia API, que valida las reglas de negocio
+- 1 liga (Liga 1 Perú, temporada 2025-2026)
+- 6 equipos con sus 6 estadios
+- 4 posiciones y 66 jugadores
+- 9 partidos: 6 jugados en dos jornadas y 3 programados
 
-Para probar los tres roles, creá tres usuarios desde el admin y asignales
+Cada equipo juega uno de local y uno de visitante, así la tabla de posiciones
+muestra datos reales desde el arranque. La migración no hace nada si ya existe
+una liga, para no duplicar en cada despliegue.
+
+Para probar los tres roles, creá usuarios desde el admin y asignales
 `rol` = `admin`, `dt` y `hincha`. El registro público siempre crea hinchas,
 a propósito.
 
@@ -359,19 +362,29 @@ Para generar la clave:
 python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
 ```
 
-**4. Crear el superusuario** (pestaña *Shell*, una vez desplegado)
+**4. El superusuario**
 
-```bash
-python manage.py createsuperuser
-```
+En el plan gratuito de Render **no hay acceso a Shell**, así que el superusuario
+se crea desde el propio build. Agregá estas tres variables de entorno:
 
-Y desde ahí cargar los datos por el panel `/admin/`.
+| Clave | Valor |
+|---|---|
+| `DJANGO_SUPERUSER_USERNAME` | `admin` |
+| `DJANGO_SUPERUSER_EMAIL` | tu correo |
+| `DJANGO_SUPERUSER_PASSWORD` | usá el botón *Generate* de Render |
+
+`build.sh` lo crea en el siguiente despliegue y **le asigna el rol `admin`**.
+
+> Ese último paso no es opcional: `createsuperuser` solo setea `is_staff` e
+> `is_superuser`, y deja el campo `rol` en su valor por defecto (`hincha`).
+> Como los permisos de la API miran `rol`, sin esa línea el superusuario
+> entra al panel de Django pero recibe **403 en cualquier escritura por la API**.
 
 ### Qué hace cada archivo del despliegue
 
 | Archivo | Para qué |
 |---|---|
-| `build.sh` | Instala dependencias, junta estáticos y migra en cada deploy |
+| `build.sh` | Instala dependencias, junta estáticos, migra y crea el superusuario |
 | `render.yaml` | Describe el servicio y la base de datos como código |
 | `runtime.txt` | Fija la versión de Python |
 | `requirements.txt` | Dependencias con versión exacta, en UTF-8 |
