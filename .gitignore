@@ -1,0 +1,29 @@
+# Credenciales: nunca se suben
+.env
+
+# Entorno virtual
+venv/
+env/
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+
+# Base de datos local
+*.sqlite3
+db.sqlite3
+
+# Archivos estaticos generados por collectstatic
+staticfiles/
+
+# Editores
+.vscode/
+.idea/
+*.swp
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
